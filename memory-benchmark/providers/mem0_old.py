@@ -1,10 +1,6 @@
 """
-Mem0 Provider Implementation - FIXED VERSION
-Key fixes:
-1. Improved content matching threshold
-2. Temporal filtering support
-3. Category-based filtering
-4. Better error handling
+Mem0 Provider Implementation
+Implements the MemoryProvider interface for Mem0
 """
 
 from typing import Dict, Any, Optional
@@ -24,7 +20,8 @@ if ENV_PATH:
 
 class Mem0Provider:
     """
-    Mem0 memory provider implementation - FIXED
+    Mem0 memory provider implementation
+    Docs: https://docs.mem0.ai/
     """
     
     def __init__(self, api_key: Optional[str] = None, config: Optional[Dict] = None):
@@ -40,15 +37,6 @@ class Mem0Provider:
             raise ValueError("Mem0 API key is required. Set MEM0_API_KEY env var or pass api_key")
         
         self.config = config or {}
-        
-        # FIXED: Added configurable content matching threshold
-        self.content_match_threshold = float(self.config.get("content_match_threshold", 0.70))
-        
-        # FIXED: Added post-store delay for indexing
-        self.post_store_delay_s = float(self.config.get("post_store_delay_s", 1.0))
-        
-        # FIXED: Added support for category filtering
-        self.use_categories = bool(self.config.get("use_categories", True))
 
         # Initialize Mem0 hosted API client (uses MEM0_API_KEY)
         self.client = MemoryClient(
@@ -59,7 +47,7 @@ class Mem0Provider:
         )
         
         # Track stored memories for evaluation purposes
-        self.memory_mapping = {}  # scenario_id -> mem0 memory id
+        self.memory_mapping = {}  # scenario_id -> list of mem0 memory ids
         self.memory_content = {}  # scenario_id -> source content
         self.user_namespace = {}  # logical user_id -> isolated user_id
 
@@ -125,7 +113,7 @@ class Mem0Provider:
     def _match_local_id_by_content(self, content: str) -> Optional[str]:
         """
         Map provider-returned paraphrased content back to benchmark memory IDs.
-        FIXED: Increased threshold from 0.42 to 0.70 for better precision.
+        This stabilizes scoring when Mem0 returns new memory UUIDs.
         """
         target = self._normalize_text(content)
         if not target:
@@ -140,24 +128,17 @@ class Mem0Provider:
             if not source:
                 continue
             source_tokens = set(source.split())
-            
-            # Token overlap score
             overlap = 0.0
             if source_tokens and target_tokens:
                 overlap = len(source_tokens & target_tokens) / len(source_tokens | target_tokens)
-            
-            # Sequence similarity score
             seq_ratio = SequenceMatcher(None, target, source).ratio()
-            
-            # Take the better of the two scores
             score = max(overlap, seq_ratio)
-            
             if score > best_score:
                 best_score = score
                 best_id = local_id
 
-        # FIXED: Increased threshold from 0.42 to 0.70
-        if best_score >= self.content_match_threshold:
+        # Conservative threshold to avoid incorrect remaps.
+        if best_score >= 0.42:
             return best_id
         return None
         
@@ -177,27 +158,32 @@ class Mem0Provider:
             "semantic_search": True,
             "temporal_awareness": True,
             "metadata_filtering": True,
-            "ttl_expiration": False,
-            "summarization": True,
-            "conflict_detection": False,
+            "ttl_expiration": False,  # Mem0 doesn't have built-in TTL
+            "summarization": True,  # Mem0 can summarize memories
+            "conflict_detection": False,  # Not built-in
         }
     
     def store(self, content: str, metadata: Optional[Dict] = None, 
               user_id: str = "test_user", memory_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Store a memory in Mem0
+        
+        Args:
+            content: The memory content/text
+            metadata: Optional metadata dict
+            user_id: User ID for the memory
+            memory_id: Optional custom memory ID (for tracking)
+            
+        Returns:
+            Dict with memory_id and status
         """
         try:
             effective_user_id = self._effective_user_id(user_id)
-            
-            # FIXED: Add category to metadata if enabled
-            store_metadata = dict(metadata or {})
-            
             # Mem0's add method
             result = self.client.add(
                 messages=content,
                 user_id=effective_user_id,
-                metadata=store_metadata,
+                metadata=metadata or {},
                 async_mode=False,
             )
 
@@ -207,10 +193,6 @@ class Mem0Provider:
             if memory_id:
                 self.memory_mapping[memory_id] = created_id or result
                 self.memory_content[memory_id] = content
-
-            # FIXED: Add delay for indexing
-            if self.post_store_delay_s > 0:
-                time.sleep(self.post_store_delay_s)
 
             return {
                 "success": True,
@@ -228,60 +210,51 @@ class Mem0Provider:
                  k: int = 5, filters: Optional[Dict] = None) -> Dict[str, Any]:
         """
         Retrieve memories from Mem0
-        FIXED: Added better filtering and temporal support
+        
+        Args:
+            query: Search query
+            user_id: User ID to search for
+            k: Number of results to return
+            filters: Optional metadata filters
+            
+        Returns:
+            Dict with retrieved memories
         """
         try:
             effective_user_id = self._effective_user_id(user_id)
-            
-            # FIXED: Build filters properly
+            # Mem0's search method
             merged_filters = dict(filters or {})
-            
-            # Ensure user_id is in filters
+            # Mem0 v2 search requires non-empty filters.
             if "user_id" not in merged_filters:
                 merged_filters["user_id"] = effective_user_id
-            
-            # FIXED: Add category filtering if provided
-            if self.use_categories and filters and "category" in filters:
-                # Mem0 might support category filtering in metadata
-                pass  # Keep category in merged_filters
 
             results = self.client.search(
                 query=query,
-                top_k=k * 2,  # FIXED: Request more to account for filtering
+                top_k=k,
                 filters=merged_filters
             )
 
             # Format results
             memories = []
             reverse_map = self._reverse_mapping()
-            
             for result in self._extract_results(results):
                 mem0_id = result.get("id")
                 content = result.get("memory") or result.get("text")
-                
-                # Try to match to local ID
                 local_id = reverse_map.get(mem0_id)
                 if not local_id:
                     local_id = self._match_local_id_by_content(content)
                     if local_id and mem0_id:
-                        # Update mapping for future queries
                         self.memory_mapping[local_id] = mem0_id
-                
                 score = result.get("score", 0.0) or 0.0
-                
-                # FIXED: Better metadata handling
-                result_metadata = result.get("metadata", {}) or {}
-                
                 memories.append({
                     "id": local_id or mem0_id,
                     "content": content,
                     "score": score,
-                    "metadata": result_metadata,
+                    "metadata": result.get("metadata", {}),
                     "created_at": result.get("created_at"),
                     "updated_at": result.get("updated_at"),
                     "mem0_id": mem0_id,
                 })
-                
                 if len(memories) >= k:
                     break
 
@@ -301,6 +274,15 @@ class Mem0Provider:
                user_id: str = "test_user", metadata: Optional[Dict] = None) -> Dict[str, Any]:
         """
         Update an existing memory
+
+        Args:
+            memory_id: The memory ID to update
+            user_id: User ID
+            new_content: New content for the memory
+            metadata: Optional new metadata
+
+        Returns:
+            Dict with update status
         """
         try:
             # Get the actual mem0 ID if we have a mapping
@@ -314,13 +296,7 @@ class Mem0Provider:
                 text=new_content,
                 metadata=metadata
             )
-            
-            # Update content mapping
             self.memory_content[memory_id] = new_content
-
-            # FIXED: Add delay for re-indexing
-            if self.post_store_delay_s > 0:
-                time.sleep(self.post_store_delay_s)
 
             return {
                 "success": True,
@@ -336,6 +312,13 @@ class Mem0Provider:
     def delete(self, memory_id: str, user_id: str = "test_user") -> Dict[str, Any]:
         """
         Delete a memory
+
+        Args:
+            memory_id: The memory ID to delete
+            user_id: User ID
+
+        Returns:
+            Dict with deletion status
         """
         try:
             # Get the actual mem0 ID if we have a mapping
@@ -366,6 +349,12 @@ class Mem0Provider:
     def delete_all(self, user_id: str = "test_user") -> Dict[str, Any]:
         """
         Delete all memories for a user
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Dict with deletion status
         """
         try:
             effective_user_id = self._effective_user_id(user_id)
@@ -388,6 +377,12 @@ class Mem0Provider:
     def list_all(self, user_id: str = "test_user") -> Dict[str, Any]:
         """
         List all memories for a user
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Dict with all memories
         """
         try:
             effective_user_id = self._effective_user_id(user_id)
@@ -421,6 +416,12 @@ class Mem0Provider:
     def reset(self, user_id: str = "test_user") -> Dict[str, Any]:
         """
         Reset/clear all memories (for testing)
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            Dict with reset status
         """
         previous_effective = self._effective_user_id(user_id)
         try:

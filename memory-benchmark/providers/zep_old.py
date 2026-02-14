@@ -1,11 +1,6 @@
 """
-Zep Provider Implementation - ACTUALLY FIXED VERSION
-Based on real API testing, not documentation assumptions.
-
-Key learnings:
-1. Valid graph search scopes: "episodes", "messages" (NOT "facts")
-2. memory.search() API doesn't exist in this SDK version
-3. Episodes work better than expected with proper configuration
+Zep Provider Implementation
+Implements the memory provider interface for Zep Cloud.
 """
 
 from typing import Dict, Any, Optional
@@ -21,7 +16,8 @@ if ENV_PATH:
 
 class ZepProvider:
     """
-    Zep memory provider implementation - CORRECTED based on actual API
+    Zep memory provider implementation.
+    Docs: https://help.getzep.com/overview
     """
 
     def __init__(self, api_key: Optional[str] = None, config: Optional[Dict] = None):
@@ -31,36 +27,17 @@ class ZepProvider:
 
         self.config = config or {}
         self.thread_prefix = self.config.get("thread_prefix", "memory-benchmark")
-        
-        # CORRECTED: Use "episodes" or "messages", not "facts"
-        # Valid scopes for this API version: episodes, messages
         self.search_scope = self.config.get("search_scope", "episodes")
-        
-        # OPTIMIZED: Higher multiplier to get enough results before filtering
-        self.search_limit_multiplier = int(self.config.get("search_limit_multiplier", 5))
-        
-        # OPTIMIZED: Lower threshold since episodes already have content
-        self.search_min_score = float(self.config.get("search_min_score", 0.1))
-        
+        self.search_limit_multiplier = int(self.config.get("search_limit_multiplier", 8))
+        self.search_min_score = float(self.config.get("search_min_score", 0.0))
         self.search_retries = int(self.config.get("search_retries", 3))
-        self.search_retry_delay_ms = int(self.config.get("search_retry_delay_ms", 500))
-        
-        # INCREASED: More time for indexing
-        self.task_wait_timeout_s = float(self.config.get("task_wait_timeout_s", 30.0))
-        self.task_poll_interval_s = float(self.config.get("task_poll_interval_s", 0.5))
-        
-        # CRITICAL: Wait after storing for indexing
-        self.post_store_delay_s = float(self.config.get("post_store_delay_s", 2.5))
-        
+        self.search_retry_delay_ms = int(self.config.get("search_retry_delay_ms", 350))
+        self.task_wait_timeout_s = float(self.config.get("task_wait_timeout_s", 20.0))
+        self.task_poll_interval_s = float(self.config.get("task_poll_interval_s", 0.25))
         self.strict_uuid_match = bool(self.config.get("strict_uuid_match", False))
         self.use_metadata_timestamp_as_created_at = bool(
             self.config.get("use_metadata_timestamp_as_created_at", True)
         )
-        
-        # ADDED: Configuration options
-        self.include_context = bool(self.config.get("include_context", True))
-        self.fuzzy_content_matching = bool(self.config.get("fuzzy_content_matching", True))
-        self.content_similarity_threshold = float(self.config.get("content_similarity_threshold", 0.6))
 
         try:
             from zep_cloud import Zep
@@ -95,7 +72,7 @@ class ZepProvider:
             "metadata_filtering": True,
             "ttl_expiration": False,
             "summarization": True,
-            "conflict_detection": True,
+            "conflict_detection": False,
         }
 
     def _thread_id(self, user_id: str) -> str:
@@ -109,7 +86,7 @@ class ZepProvider:
     def _ensure_user_and_thread(self, user_id: str) -> str:
         thread_id = self._thread_id(user_id)
 
-        # Best effort create user/thread
+        # Best effort create user/thread. If they already exist, continue.
         try:
             self.client.user.add(user_id=user_id)
         except Exception:
@@ -120,11 +97,8 @@ class ZepProvider:
         except Exception as e:
             msg = str(e).lower()
             if "already" not in msg and "exists" not in msg and "conflict" not in msg:
-                # Validate by fetching
-                try:
-                    self.client.thread.get(thread_id=thread_id, lastn=1)
-                except Exception:
-                    pass  # If get fails, we'll handle it in operations
+                # If not an "already exists" style error, validate by attempting to fetch.
+                self.client.thread.get(thread_id=thread_id, lastn=1)
 
         return thread_id
 
@@ -134,6 +108,7 @@ class ZepProvider:
         try:
             self.client.thread.message.update(message_uuid=message_uuid, metadata=metadata)
         except Exception:
+            # Metadata update is best effort for benchmark bookkeeping.
             pass
 
     def _wait_for_task(self, task_id: Optional[str]) -> None:
@@ -143,44 +118,18 @@ class ZepProvider:
 
         deadline = time.time() + self.task_wait_timeout_s
         while time.time() < deadline:
-            try:
-                task = self.client.task.get(task_id=task_id)
-                status = (getattr(task, "status", "") or "").lower()
+            task = self.client.task.get(task_id=task_id)
+            status = (getattr(task, "status", "") or "").lower()
 
-                if status in ("completed", "succeeded", "success", "done"):
-                    return
-                if status in ("failed", "error", "cancelled"):
-                    err = getattr(task, "error", None)
-                    # Don't raise - just log and continue
-                    print(f"Warning: Zep task {task_id} status: {status}, error: {err}")
-                    return
+            if status in ("completed", "succeeded", "success", "done"):
+                return
+            if status in ("failed", "error", "cancelled"):
+                err = getattr(task, "error", None)
+                raise RuntimeError(f"Zep task {task_id} failed: {err}")
 
-                time.sleep(self.task_poll_interval_s)
-            except Exception as e:
-                if time.time() >= deadline:
-                    print(f"Warning: Timed out waiting for Zep task {task_id}: {e}")
-                    return
-                time.sleep(self.task_poll_interval_s)
+            time.sleep(self.task_poll_interval_s)
 
-        print(f"Warning: Timed out waiting for Zep task {task_id}")
-
-    def _calculate_similarity(self, text1: str, text2: str) -> float:
-        """Calculate simple word-based similarity between two texts."""
-        if not text1 or not text2:
-            return 0.0
-        
-        # Normalize
-        t1 = set(text1.lower().split())
-        t2 = set(text2.lower().split())
-        
-        if not t1 or not t2:
-            return 0.0
-        
-        # Jaccard similarity
-        intersection = len(t1 & t2)
-        union = len(t1 | t2)
-        
-        return intersection / union if union > 0 else 0.0
+        raise TimeoutError(f"Timed out waiting for Zep task {task_id} to complete")
 
     def store(
         self,
@@ -197,7 +146,6 @@ class ZepProvider:
             msg_metadata["benchmark_memory_id"] = local_id
             msg_metadata["deleted"] = False
             msg_metadata["superseded"] = False
-            
             created_at = None
             if self.use_metadata_timestamp_as_created_at:
                 created_at = (metadata or {}).get("timestamp")
@@ -208,13 +156,11 @@ class ZepProvider:
                 metadata=msg_metadata,
                 created_at=created_at,
             )
-            
             response = self.client.thread.add_messages(
                 thread_id=thread_id,
                 messages=[message],
-                return_context=self.include_context,
+                return_context=False,
             )
-            
             self._wait_for_task(getattr(response, "task_id", None))
 
             message_uuid = None
@@ -227,10 +173,6 @@ class ZepProvider:
                 "deleted": False,
                 "message_uuid": message_uuid,
             }
-
-            # CRITICAL: Wait for indexing
-            if self.post_store_delay_s > 0:
-                time.sleep(self.post_store_delay_s)
 
             return {
                 "success": True,
@@ -252,103 +194,73 @@ class ZepProvider:
             self._ensure_user_and_thread(user_id)
             state = self._state(user_id)
 
-            search_limit = k * max(self.search_limit_multiplier, 1)
+            search_limit = max(k * max(self.search_limit_multiplier, 1), 20)
             memories = []
 
             for attempt in range(max(self.search_retries, 1)):
-                try:
-                    # Use graph.search with episodes scope (CONFIRMED WORKING)
-                    results = self.client.graph.search(
-                        query=query,
-                        user_id=user_id,
-                        scope=self.search_scope,  # "episodes" works
-                        limit=search_limit,
-                    )
+                results = self.client.graph.search(
+                    query=query,
+                    user_id=user_id,
+                    scope=self.search_scope,
+                    limit=search_limit,
+                )
 
-                    episodes = getattr(results, "episodes", None) or []
-                    memories = []
-                    seen = set()
+                episodes = getattr(results, "episodes", None) or []
+                memories = []
+                seen = set()
 
-                    for episode in episodes:
-                        ep_meta = dict(getattr(episode, "metadata", {}) or {})
-                        ep_content = getattr(episode, "content", "")
-                        ep_id = getattr(episode, "uuid_", None) or getattr(episode, "uuid", None)
-                        ep_score = getattr(episode, "score", 0.0) or 0.0
-                        
-                        if ep_score < self.search_min_score:
+                for episode in episodes:
+                    ep_meta = dict(getattr(episode, "metadata", {}) or {})
+                    ep_content = getattr(episode, "content", "")
+                    ep_id = getattr(episode, "uuid_", None)
+                    ep_score = getattr(episode, "score", 0.0) or 0.0
+                    if ep_score < self.search_min_score:
+                        continue
+
+                    local_id = ep_meta.get("benchmark_memory_id")
+                    if not local_id:
+                        # Fallback: exact content match to active local state.
+                        matches = [
+                            lid
+                            for lid, entry in state.items()
+                            if not entry.get("deleted") and entry.get("content") == ep_content
+                        ]
+                        if len(matches) == 1:
+                            local_id = matches[0]
+
+                    if local_id and local_id in state:
+                        entry = state[local_id]
+                        if entry.get("deleted"):
                             continue
-
-                        # Try to get local_id from metadata first
-                        local_id = ep_meta.get("benchmark_memory_id")
-                        
-                        # IMPROVED: Fuzzy matching if enabled
-                        if not local_id and self.fuzzy_content_matching:
-                            best_match_id = None
-                            best_similarity = 0.0
-                            
-                            for lid, entry in state.items():
-                                if entry.get("deleted"):
-                                    continue
-                                
-                                stored_content = entry.get("content", "")
-                                similarity = self._calculate_similarity(ep_content, stored_content)
-                                
-                                if similarity > best_similarity and similarity >= self.content_similarity_threshold:
-                                    best_similarity = similarity
-                                    best_match_id = lid
-                            
-                            if best_match_id:
-                                local_id = best_match_id
-                        elif not local_id:
-                            # Fallback: exact content match
-                            matches = [
-                                lid
-                                for lid, entry in state.items()
-                                if not entry.get("deleted") and entry.get("content") == ep_content
-                            ]
-                            if len(matches) == 1:
-                                local_id = matches[0]
-
-                        # Skip deleted memories
-                        if local_id and local_id in state:
-                            entry = state[local_id]
-                            if entry.get("deleted"):
-                                continue
-
-                        # Skip duplicates
-                        if local_id and local_id in seen:
+                        current_uuid = entry.get("message_uuid")
+                        # Optionally enforce strict latest-id matching.
+                        if self.strict_uuid_match and current_uuid and ep_id and current_uuid != ep_id:
                             continue
-                        
-                        if local_id:
-                            seen.add(local_id)
-                        elif ep_id and ep_id not in seen:
-                            seen.add(ep_id)
-                        else:
-                            continue
+                    else:
+                        # Ignore untracked episodes so benchmark IDs remain stable.
+                        continue
 
-                        memories.append({
-                            "id": local_id or ep_id,
+                    if local_id in seen:
+                        continue
+                    seen.add(local_id)
+
+                    memories.append(
+                        {
+                            "id": local_id,
                             "content": ep_content,
                             "score": ep_score,
                             "metadata": ep_meta,
                             "created_at": getattr(episode, "created_at", None),
                             "updated_at": None,
                             "zep_episode_uuid": ep_id,
-                        })
+                        }
+                    )
 
-                        if len(memories) >= k:
-                            break
-
-                    # If we got results, break retry loop
-                    if memories or attempt == max(self.search_retries, 1) - 1:
+                    if len(memories) >= k:
                         break
-                        
-                except Exception as e:
-                    # If this is the last attempt, return error
-                    if attempt == max(self.search_retries, 1) - 1:
-                        return {"success": False, "error": str(e), "memories": []}
-                
-                # Wait before retry
+
+                if memories or attempt == max(self.search_retries, 1) - 1:
+                    break
                 time.sleep(max(self.search_retry_delay_ms, 0) / 1000.0)
 
             return {"success": True, "memories": memories, "count": len(memories)}
@@ -368,7 +280,6 @@ class ZepProvider:
             previous = state.get(memory_id, {})
             prev_uuid = previous.get("message_uuid")
 
-            # Mark old version as superseded
             if prev_uuid:
                 old_meta = dict(previous.get("metadata", {}))
                 old_meta["benchmark_memory_id"] = memory_id
@@ -376,12 +287,10 @@ class ZepProvider:
                 old_meta["superseded"] = True
                 self._mark_message_metadata(prev_uuid, old_meta)
 
-            # Add new version
             new_meta = dict(metadata or {})
             new_meta["benchmark_memory_id"] = memory_id
             new_meta["deleted"] = False
             new_meta["superseded"] = False
-            
             created_at = None
             if self.use_metadata_timestamp_as_created_at:
                 created_at = (metadata or {}).get("timestamp")
@@ -392,13 +301,11 @@ class ZepProvider:
                 metadata=new_meta,
                 created_at=created_at,
             )
-            
             response = self.client.thread.add_messages(
                 thread_id=thread_id,
                 messages=[message],
-                return_context=self.include_context,
+                return_context=False,
             )
-            
             self._wait_for_task(getattr(response, "task_id", None))
 
             new_uuid = None
@@ -411,10 +318,6 @@ class ZepProvider:
                 "deleted": False,
                 "message_uuid": new_uuid,
             }
-
-            # Wait for re-indexing
-            if self.post_store_delay_s > 0:
-                time.sleep(self.post_store_delay_s)
 
             return {
                 "success": True,
@@ -463,14 +366,16 @@ class ZepProvider:
             for local_id, entry in state.items():
                 if entry.get("deleted"):
                     continue
-                memories.append({
-                    "id": local_id,
-                    "content": entry.get("content"),
-                    "metadata": entry.get("metadata", {}),
-                    "created_at": None,
-                    "updated_at": None,
-                    "zep_message_uuid": entry.get("message_uuid"),
-                })
+                memories.append(
+                    {
+                        "id": local_id,
+                        "content": entry.get("content"),
+                        "metadata": entry.get("metadata", {}),
+                        "created_at": None,
+                        "updated_at": None,
+                        "zep_message_uuid": entry.get("message_uuid"),
+                    }
+                )
             return {"success": True, "memories": memories, "count": len(memories)}
         except Exception as e:
             return {"success": False, "error": str(e), "memories": []}

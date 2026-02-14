@@ -1,0 +1,5 @@
+{
+  "content_match_threshold": 0.70,
+  "post_store_delay_s": 1.0,
+  "use_categories": true
+}
