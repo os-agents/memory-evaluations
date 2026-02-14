@@ -1,0 +1,12 @@
+{
+  "thread_prefix": "memory-benchmark",
+  "search_scope": "episodes",
+  "search_limit_multiplier": 8,
+  "search_min_score": 0.0,
+  "search_retries": 3,
+  "search_retry_delay_ms": 350,
+  "task_wait_timeout_s": 20.0,
+  "task_poll_interval_s": 0.25,
+  "strict_uuid_match": false,
+  "use_metadata_timestamp_as_created_at": true
+}

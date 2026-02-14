@@ -1,0 +1,500 @@
+{
+  "scenarios": [
+    {
+      "id": "basic_001",
+      "category": "basic_operations",
+      "name": "Simple store and retrieve",
+      "description": "Store a simple fact and retrieve it with exact query",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_001",
+            "content": "My favorite color is blue",
+            "metadata": {
+              "category": "preference",
+              "timestamp": "2024-01-15T10:00:00Z"
+            }
+          }
+        ]
+      },
+      "queries": [
+        {
+          "query": "What is my favorite color?",
+          "expected_memory_ids": ["mem_001"],
+          "expected_content": "blue",
+          "k": 3
+        }
+      ],
+      "metrics": ["precision", "recall", "exact_match"]
+    },
+    {
+      "id": "basic_002",
+      "category": "basic_operations",
+      "name": "Multiple related memories",
+      "description": "Store multiple facts and retrieve relevant ones",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_002",
+            "content": "I work at Google as a software engineer",
+            "metadata": {
+              "category": "work",
+              "timestamp": "2024-01-10T09:00:00Z"
+            }
+          },
+          {
+            "id": "mem_003",
+            "content": "My office is in Mountain View, California",
+            "metadata": {
+              "category": "work",
+              "timestamp": "2024-01-10T09:05:00Z"
+            }
+          },
+          {
+            "id": "mem_004",
+            "content": "I enjoy hiking on weekends",
+            "metadata": {
+              "category": "hobby",
+              "timestamp": "2024-01-12T15:00:00Z"
+            }
+          }
+        ]
+      },
+      "queries": [
+        {
+          "query": "Where do I work?",
+          "expected_memory_ids": ["mem_002", "mem_003"],
+          "expected_content": "Google",
+          "k": 3
+        },
+        {
+          "query": "What do I do for fun?",
+          "expected_memory_ids": ["mem_004"],
+          "expected_content": "hiking",
+          "k": 3
+        }
+      ],
+      "metrics": ["precision", "recall", "semantic_relevance"]
+    },
+    {
+      "id": "semantic_001",
+      "category": "semantic_relevance",
+      "name": "Synonym and paraphrase retrieval",
+      "description": "Retrieve memories using different wordings",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_005",
+            "content": "I am allergic to peanuts",
+            "metadata": {
+              "category": "health",
+              "timestamp": "2024-01-20T14:00:00Z"
+            }
+          },
+          {
+            "id": "mem_006",
+            "content": "I love playing tennis",
+            "metadata": {
+              "category": "hobby",
+              "timestamp": "2024-01-21T16:00:00Z"
+            }
+          }
+        ]
+      },
+      "queries": [
+        {
+          "query": "Do I have any food allergies?",
+          "expected_memory_ids": ["mem_005"],
+          "expected_content": "peanuts",
+          "k": 3
+        },
+        {
+          "query": "What sports do I enjoy?",
+          "expected_memory_ids": ["mem_006"],
+          "expected_content": "tennis",
+          "k": 3
+        }
+      ],
+      "metrics": ["semantic_relevance", "precision", "recall"]
+    },
+    {
+      "id": "temporal_001",
+      "category": "temporal_accuracy",
+      "name": "Recent vs historical information",
+      "description": "Distinguish between current and past states",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_007",
+            "content": "I lived in New York from 2018 to 2020",
+            "metadata": {
+              "category": "location",
+              "timestamp": "2024-01-05T10:00:00Z",
+              "event_time": "2020-12-31T00:00:00Z"
+            }
+          },
+          {
+            "id": "mem_008",
+            "content": "I moved to San Francisco in January 2021",
+            "metadata": {
+              "category": "location",
+              "timestamp": "2024-01-05T10:05:00Z",
+              "event_time": "2021-01-15T00:00:00Z"
+            }
+          },
+          {
+            "id": "mem_009",
+            "content": "I currently live in Seattle as of March 2023",
+            "metadata": {
+              "category": "location",
+              "timestamp": "2024-01-05T10:10:00Z",
+              "event_time": "2023-03-01T00:00:00Z"
+            }
+          }
+        ]
+      },
+      "queries": [
+        {
+          "query": "Where do I live now?",
+          "expected_memory_ids": ["mem_009"],
+          "expected_content": "Seattle",
+          "temporal_preference": "most_recent",
+          "k": 1
+        },
+        {
+          "query": "Where did I live before Seattle?",
+          "expected_memory_ids": ["mem_008"],
+          "expected_content": "San Francisco",
+          "temporal_preference": "historical",
+          "k": 1
+        },
+        {
+          "query": "What are all the places I've lived?",
+          "expected_memory_ids": ["mem_007", "mem_008", "mem_009"],
+          "expected_content": "New York, San Francisco, Seattle",
+          "temporal_preference": "all",
+          "k": 5
+        }
+      ],
+      "metrics": ["temporal_accuracy", "ordering_correctness", "recency_bias"]
+    },
+    {
+      "id": "temporal_002",
+      "category": "temporal_accuracy",
+      "name": "Event ordering",
+      "description": "Correctly order sequential events",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_010",
+            "content": "I started learning piano in 2019",
+            "metadata": {
+              "category": "hobby",
+              "timestamp": "2024-01-15T09:00:00Z",
+              "event_time": "2019-03-01T00:00:00Z"
+            }
+          },
+          {
+            "id": "mem_011",
+            "content": "I gave my first piano recital in 2020",
+            "metadata": {
+              "category": "hobby",
+              "timestamp": "2024-01-15T09:05:00Z",
+              "event_time": "2020-06-15T00:00:00Z"
+            }
+          },
+          {
+            "id": "mem_012",
+            "content": "I won a local piano competition in 2022",
+            "metadata": {
+              "category": "hobby",
+              "timestamp": "2024-01-15T09:10:00Z",
+              "event_time": "2022-11-20T00:00:00Z"
+            }
+          }
+        ]
+      },
+      "queries": [
+        {
+          "query": "Tell me about my piano journey in chronological order",
+          "expected_memory_ids": ["mem_010", "mem_011", "mem_012"],
+          "expected_order": ["mem_010", "mem_011", "mem_012"],
+          "k": 5
+        }
+      ],
+      "metrics": ["ordering_correctness", "temporal_accuracy"]
+    },
+    {
+      "id": "conflict_001",
+      "category": "conflict_handling",
+      "name": "Contradicting preferences over time",
+      "description": "Handle preference changes correctly",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_013",
+            "content": "I prefer tea over coffee",
+            "metadata": {
+              "category": "preference",
+              "timestamp": "2024-01-01T08:00:00Z"
+            }
+          },
+          {
+            "id": "mem_014",
+            "content": "I've started drinking coffee and now prefer it to tea",
+            "metadata": {
+              "category": "preference",
+              "timestamp": "2024-01-20T08:00:00Z"
+            }
+          }
+        ]
+      },
+      "queries": [
+        {
+          "query": "Do I prefer tea or coffee?",
+          "expected_memory_ids": ["mem_014"],
+          "expected_content": "coffee",
+          "conflict_resolution": "latest_wins",
+          "k": 2
+        }
+      ],
+      "metrics": ["conflict_resolution", "latest_wins_accuracy", "stale_memory_rate"]
+    },
+    {
+      "id": "conflict_002",
+      "category": "conflict_handling",
+      "name": "Multiple valid truths",
+      "description": "Handle context-dependent information",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_015",
+            "content": "My work email is john@company.com",
+            "metadata": {
+              "category": "contact",
+              "context": "work",
+              "timestamp": "2024-01-10T10:00:00Z"
+            }
+          },
+          {
+            "id": "mem_016",
+            "content": "My personal email is john.doe@gmail.com",
+            "metadata": {
+              "category": "contact",
+              "context": "personal",
+              "timestamp": "2024-01-10T10:05:00Z"
+            }
+          }
+        ]
+      },
+      "queries": [
+        {
+          "query": "What is my email?",
+          "expected_memory_ids": ["mem_015", "mem_016"],
+          "expected_content": "both emails",
+          "conflict_resolution": "return_all",
+          "k": 3
+        }
+      ],
+      "metrics": ["ambiguity_handling", "context_awareness"]
+    },
+    {
+      "id": "retention_001",
+      "category": "retention_forgetting",
+      "name": "Explicit deletion",
+      "description": "Ensure deleted memories don't resurface",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_017",
+            "content": "My old phone number was 555-1234",
+            "metadata": {
+              "category": "contact",
+              "timestamp": "2024-01-01T12:00:00Z"
+            }
+          },
+          {
+            "id": "mem_018",
+            "content": "My current phone number is 555-5678",
+            "metadata": {
+              "category": "contact",
+              "timestamp": "2024-01-15T12:00:00Z"
+            }
+          }
+        ],
+        "deletions": ["mem_017"]
+      },
+      "queries": [
+        {
+          "query": "What is my phone number?",
+          "expected_memory_ids": ["mem_018"],
+          "expected_content": "555-5678",
+          "should_not_include": ["mem_017"],
+          "k": 3
+        }
+      ],
+      "metrics": ["delete_success_rate", "zombie_memory_detection"]
+    },
+    {
+      "id": "retention_002",
+      "category": "retention_forgetting",
+      "name": "Memory update",
+      "description": "Update existing memories correctly",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_019",
+            "content": "I am learning Python",
+            "metadata": {
+              "category": "skill",
+              "timestamp": "2024-01-01T14:00:00Z"
+            }
+          }
+        ],
+        "updates": [
+          {
+            "id": "mem_019",
+            "new_content": "I am proficient in Python and now learning Rust",
+            "metadata": {
+              "category": "skill",
+              "timestamp": "2024-02-01T14:00:00Z"
+            }
+          }
+        ]
+      },
+      "queries": [
+        {
+          "query": "What programming languages do I know?",
+          "expected_memory_ids": ["mem_019"],
+          "expected_content": "Python, Rust",
+          "should_not_include_content": "learning Python",
+          "k": 3
+        }
+      ],
+      "metrics": ["update_accuracy", "stale_version_detection"]
+    },
+    {
+      "id": "complex_001",
+      "category": "context_complexity",
+      "name": "Multi-context retrieval",
+      "description": "Retrieve memories across different contexts",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_020",
+            "content": "I manage a team of 5 engineers at work",
+            "metadata": {
+              "category": "work",
+              "context": "professional",
+              "timestamp": "2024-01-10T09:00:00Z"
+            }
+          },
+          {
+            "id": "mem_021",
+            "content": "I volunteer as a coding mentor for high school students",
+            "metadata": {
+              "category": "volunteer",
+              "context": "personal",
+              "timestamp": "2024-01-12T17:00:00Z"
+            }
+          },
+          {
+            "id": "mem_022",
+            "content": "I have a daughter who is 8 years old",
+            "metadata": {
+              "category": "family",
+              "context": "personal",
+              "timestamp": "2024-01-05T20:00:00Z"
+            }
+          }
+        ]
+      },
+      "queries": [
+        {
+          "query": "Do I work with young people?",
+          "expected_memory_ids": ["mem_021"],
+          "expected_content": "mentor, high school students",
+          "k": 3
+        },
+        {
+          "query": "Tell me about my family",
+          "expected_memory_ids": ["mem_022"],
+          "expected_content": "daughter, 8 years old",
+          "k": 3
+        }
+      ],
+      "metrics": ["context_awareness", "semantic_relevance", "precision"]
+    },
+    {
+      "id": "edge_001",
+      "category": "edge_cases",
+      "name": "No matching memories",
+      "description": "Handle queries with no relevant memories gracefully",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_023",
+            "content": "I enjoy reading science fiction novels",
+            "metadata": {
+              "category": "hobby",
+              "timestamp": "2024-01-15T19:00:00Z"
+            }
+          }
+        ]
+      },
+      "queries": [
+        {
+          "query": "What is my favorite car brand?",
+          "expected_memory_ids": [],
+          "expected_content": null,
+          "k": 3
+        }
+      ],
+      "metrics": ["false_positive_rate", "precision"]
+    },
+    {
+      "id": "edge_002",
+      "category": "edge_cases",
+      "name": "Very similar memories",
+      "description": "Distinguish between very similar but distinct memories",
+      "setup": {
+        "memories": [
+          {
+            "id": "mem_024",
+            "content": "I met Sarah at the tech conference in Austin in 2022",
+            "metadata": {
+              "category": "people",
+              "timestamp": "2024-01-10T11:00:00Z"
+            }
+          },
+          {
+            "id": "mem_025",
+            "content": "I met Sara at the startup meetup in Boston in 2023",
+            "metadata": {
+              "category": "people",
+              "timestamp": "2024-01-10T11:05:00Z"
+            }
+          }
+        ]
+      },
+      "queries": [
+        {
+          "query": "Where did I meet Sarah?",
+          "expected_memory_ids": ["mem_024"],
+          "expected_content": "Austin",
+          "should_not_include": ["mem_025"],
+          "k": 2
+        }
+      ],
+      "metrics": ["precision", "false_positive_rate", "exact_match"]
+    }
+  ],
+  "evaluation_config": {
+    "precision_threshold": 0.8,
+    "recall_threshold": 0.7,
+    "semantic_similarity_threshold": 0.75,
+    "temporal_accuracy_threshold": 0.9,
+    "llm_model": "claude-3-5-sonnet-20241022",
+    "llm_provider": "anthropic"
+  }
+}
