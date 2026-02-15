@@ -41,6 +41,11 @@ memory-benchmark/results/*
 !memory-benchmark/results/.gitkeep
 *.log
 
+# Local backups / local-only scripts
+memory-benchmark/providers/mem0_old.py
+memory-benchmark/providers/zep_old.py
+memory-benchmark/test_supermemory.py
+
 # OS
 .DS_Store
 Thumbs.db

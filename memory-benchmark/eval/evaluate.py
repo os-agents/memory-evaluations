@@ -32,6 +32,32 @@ class MemoryEvaluator:
         
         # Results storage
         self.results = defaultdict(list)
+
+    @staticmethod
+    def _get_wait_seconds(provider, key: str, default_seconds: float = 0.5) -> float:
+        """
+        Read optional provider timing overrides.
+        Provider can expose:
+          - get_timing_config() -> dict
+          - timing_config dict attribute
+        """
+        timing = {}
+        if hasattr(provider, "get_timing_config"):
+            try:
+                timing = provider.get_timing_config() or {}
+            except Exception:
+                timing = {}
+        elif hasattr(provider, "timing_config"):
+            try:
+                timing = getattr(provider, "timing_config") or {}
+            except Exception:
+                timing = {}
+
+        value = timing.get(key, default_seconds)
+        try:
+            return float(value)
+        except Exception:
+            return float(default_seconds)
         
     def run_evaluation(self, provider, user_id: str = "test_user") -> Dict[str, Any]:
         """
@@ -61,7 +87,7 @@ class MemoryEvaluator:
             
             # Reset provider state before each scenario
             provider.reset(user_id=user_id)
-            time.sleep(0.5)  # Small delay for API rate limits
+            time.sleep(self._get_wait_seconds(provider, "post_reset_sleep_s", 0.5))
             
             # Run scenario
             result = self.run_scenario(provider, scenario, user_id)
@@ -133,7 +159,7 @@ class MemoryEvaluator:
             provider.delete(memory_id=memory_id, user_id=user_id)
         
         # Small delay after setup
-        time.sleep(0.5)
+        time.sleep(self._get_wait_seconds(provider, "post_setup_sleep_s", 0.5))
         
         # Query phase: Test retrieval
         queries = scenario.get("queries", [])

@@ -1,0 +1,4 @@
+{
+  "post_reset_sleep_s": 60.0,
+  "post_setup_sleep_s": 60.0
+}

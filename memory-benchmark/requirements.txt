@@ -1,6 +1,8 @@
 # Core dependencies
 mem0ai>=0.0.1
 zep-cloud>=3.16.0
+supermemory>=0.1.0
+alchemystai>=0.1.0
 
 # Evaluation dependencies
 anthropic>=0.18.0  # For LLM-based semantic evaluation (optional)

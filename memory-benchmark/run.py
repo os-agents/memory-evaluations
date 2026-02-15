@@ -50,7 +50,7 @@ def setup_environment(provider_names=None):
         print("   Then add your API keys to the .env file\n")
         return False
     
-    provider_names = provider_names or ["mem0"]
+    provider_names = provider_names or ["mem0", "zep", "supermemory"]
 
     # Check for required API keys
     missing_keys = []
@@ -58,6 +58,7 @@ def setup_environment(provider_names=None):
     required_env_by_provider = {
         "mem0": ["MEM0_API_KEY"],
         "zep": ["ZEP_API_KEY"],
+        "supermemory": ["SUPERMEMORY_API_KEY"],
     }
 
     for provider_name in provider_names:
@@ -83,6 +84,7 @@ def run_evaluation(provider_name: str = "mem0", save_results: bool = True, provi
     Args:
         provider_name: Name of provider to evaluate
         save_results: Whether to save results to file
+        provider_config: Provider-specific configuration
     """
     print(f"\n🚀 Starting Memory Provider Evaluation")
     print(f"📅 Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -99,12 +101,17 @@ def run_evaluation(provider_name: str = "mem0", save_results: bool = True, provi
         elif provider_name == "zep":
             from providers.zep import ZepProvider
             provider = ZepProvider(config=provider_config)
+        elif provider_name == "supermemory":
+            from providers.supermemory import SupermemoryProvider
+            provider = SupermemoryProvider(config=provider_config)
         else:
             print(f"✗ Unknown provider: {provider_name}")
             return None
         print(f"✓ {provider_name} initialized successfully")
     except Exception as e:
         print(f"✗ Failed to initialize {provider_name}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
     
     # Initialize evaluator
@@ -217,13 +224,13 @@ def main():
         '--provider',
         type=str,
         default=None,
-        help='Provider to evaluate (supported: mem0, zep). If omitted, runs mem0 and zep.'
+        help='Provider to evaluate (supported: mem0, zep, supermemory). If omitted, runs all providers.'
     )
     
     parser.add_argument(
         '--compare',
         nargs='+',
-        help='Compare multiple providers (e.g., --compare mem0 zep)'
+        help='Compare multiple providers (e.g., --compare mem0 zep supermemory)'
     )
     
     parser.add_argument(
@@ -235,7 +242,7 @@ def main():
     args = parser.parse_args()
     
     # Setup environment
-    provider_names = args.compare if args.compare else ([args.provider] if args.provider else ["mem0", "zep"])
+    provider_names = args.compare if args.compare else ([args.provider] if args.provider else ["mem0", "zep", "supermemory"])
     if not setup_environment(provider_names=provider_names):
         print("\n⚠️  Environment setup incomplete. Some evaluations may fail.")
         response = input("Continue anyway? (y/n): ")
@@ -249,7 +256,7 @@ def main():
         provider_config = load_provider_config(args.provider)
         run_evaluation(args.provider, save_results=not args.no_save, provider_config=provider_config)
     else:
-        for provider_name in ["mem0", "zep"]:
+        for provider_name in ["mem0", "zep", "supermemory"]:
             print(f"\n{'='*80}")
             print(f"Evaluating: {provider_name}")
             print(f"{'='*80}")
@@ -261,4 +268,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
